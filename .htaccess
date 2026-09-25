@@ -1,0 +1,16 @@
+RewriteEngine On
+
+# Принудительный HTTPS (раскомментируйте при наличии SSL)
+# RewriteCond %{HTTPS} off
+# RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+
+# ЧПУ для новостей
+RewriteRule ^news/([0-9]+)$ news.php?id=$1 [L]
+
+# Защита файлов
+<FilesMatch "\.(sql|log|ini)$">
+    Require all denied
+</FilesMatch>
+
+# Запрет листинга директорий
+Options -Indexes
