@@ -1,106 +1,83 @@
 <?php
-require_once '../includes/config.php';
-require_once '../includes/functions.php';
-requireAdmin();
+/**
+ * Публичная страница новостей.
+ *  /news.php            — список (с пагинацией)
+ *  /news.php?id=N       — полная запись
+ */
+require_once __DIR__ . '/includes/config.php';
+require_once __DIR__ . '/includes/functions.php';
 
-// Обработка действий
-$action = $_GET['action'] ?? 'list';
-$id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+$settings = getSettings();
+$currentPage = 'news';
 
-// Удаление
-if ($action === 'delete' && $id) {
-    deleteNews($id);
-    header('Location: news.php');
-    exit;
+$id = isset($_GET['id']) ? (int)$_GET["id"] : 0;
+
+if ($id > 0) {
+    $item = getNewsItem($id);
+    if (!$item) {
+        http_response_code(404);
+        $item = null;
+    }
+} else {
+    $perPage = 9;
+    $total   = getNewsCount();
+    $pages   = max(1, (int)ceil($total / $perPage));
+    $page    = max(1, min($pages, (int)($_GET['page'] ?? 1)));
+    $news    = getLatestNews($perPage, ($page - 1) * $perPage);
 }
 
-// Сохранение (добавление/обновление)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save'])) {
-    $title = $_POST['title'];
-    $content = $_POST['content'];
-    $date = $_POST['date'];
-    $category = $_POST['category'] ?? '';
-    $image = $_POST['image'] ?? '';
-    $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
-    saveNews($id, $title, $content, $image, $date, $category);
-    header('Location: news.php');
-    exit;
-}
-
-$title_page = "Управление новостями";
-include '../includes/header.php';
+$title = $item ? $item['title'] : 'Новости';
+include __DIR__ . '/includes/header.php';
 ?>
-<div class="container my-5">
-    <h1>Новости</h1>
-    <a href="news.php?action=add" class="btn btn-success mb-3">Добавить новость</a>
+<section class="section">
+    <div class="container">
 
-    <?php if ($action === 'add' || ($action === 'edit' && $id)): ?>
-        <?php
-        $news_item = null;
-        if ($action === 'edit' && $id) {
-            $news_item = getNewsItem($id);
-            if (!$news_item) {
-                echo '<div class="alert alert-danger">Новость не найдена</div>';
-                include '../includes/footer.php';
-                exit;
-            }
-        }
-        ?>
-        <h2><?= $action === 'add' ? 'Новая новость' : 'Редактирование' ?></h2>
-        <form method="post">
-            <input type="hidden" name="id" value="<?= $news_item['id'] ?? 0 ?>">
-            <div class="mb-3">
-                <label for="title" class="form-label">Заголовок</label>
-                <input type="text" class="form-control" id="title" name="title" value="<?= e($news_item['title'] ?? '') ?>" required>
+        <?php if (isset($item)): ?>
+
+            <?php if (!$item): ?>
+                <h1 class="section-title">Новость не найдена</h1>
+                <p><a href="/news.php" class="btn btn-primary">← Ко всем новостям</a></p>
+            <?php else: ?>
+                <article class="news-full">
+                    <h1 class="section-title" style="text-align:left"><?= e($item['title']) ?></h1>
+                    <p class="card__date"><?= date('d.m.Y', strtotime($item['date'])) ?>
+                        <?php if (!empty($item['category'])): ?> · <?= e($item['category']) ?><?php endif; ?>
+                    </p>
+                    <?php if (!empty($item['image'])): ?>
+                        <img class="news-full__img" src="<?= e($item['image']) ?>" alt="<?= e($item['title']) ?>">
+                    <?php endif; ?>
+                    <div class="news-full__content"><?= $item['content'] ?></div>
+                    <p><a href="/news.php" class="btn btn-outline">← Все новости</a></p>
+                </article>
+            <?php endif; ?>
+
+        <?php else: ?>
+            <h1 class="section-title">Новости и анонсы</h1>
+            <div class="grid grid-3">
+                <?php foreach ($news as $n): ?>
+                    <article class="card">
+                        <img class="card__img" src="<?= e($n['image'] ?: '/assets/img/placeholder.jpg') ?>" alt="<?= e($n['title']) ?>">
+                        <div class="card__body">
+                            <div class="card__date"><?= date('d.m.Y', strtotime($n['date'])) ?></div>
+                            <h2 class="card__title"><a href="/news/<?= (int)$n['id'] ?>"><?= e($n['title']) ?></a></h2>
+                            <p class="card__text"><?= e(truncate($n['excerpt'] ?? $n['content'], 120)) ?></p>
+                            <a href="/news/<?= (int)$n['id'] ?>" class="btn btn-outline btn-sm">Читать →</a>
+                        </div>
+                    </article>
+                <?php endforeach; ?>
+                <?php if (empty($news)): ?><p>Новостей пока нет.</p><?php endif; ?>
             </div>
-            <div class="mb-3">
-                <label for="content" class="form-label">Содержание</label>
-                <textarea class="form-control" id="editor" name="content" rows="10"><?= e($news_item['content'] ?? '') ?></textarea>
-            </div>
-            <div class="mb-3">
-                <label for="date" class="form-label">Дата</label>
-                <input type="date" class="form-control" id="date" name="date" value="<?= e($news_item['date'] ?? date('Y-m-d')) ?>" required>
-            </div>
-            <div class="mb-3">
-                <label for="category" class="form-label">Категория</label>
-                <input type="text" class="form-control" id="category" name="category" value="<?= e($news_item['category'] ?? '') ?>">
-            </div>
-            <div class="mb-3">
-                <label for="image" class="form-label">Путь к изображению</label>
-                <input type="text" class="form-control" id="image" name="image" value="<?= e($news_item['image'] ?? '') ?>" placeholder="/uploads/news/photo.jpg">
-            </div>
-            <button type="submit" name="save" class="btn btn-primary">Сохранить</button>
-            <a href="news.php" class="btn btn-secondary">Отмена</a>
-        </form>
-        <script src="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-bs4.min.js"></script>
-        <script>$('#editor').summernote({height: 300});</script>
-    <?php else: ?>
-        <table class="table table-bordered">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Заголовок</th>
-                    <th>Дата</th>
-                    <th>Действия</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php
-                $stmt = $pdo->query("SELECT * FROM news ORDER BY date DESC");
-                while ($row = $stmt->fetch(PDO::FETCH_ASSOC)):
-                ?>
-                    <tr>
-                        <td><?= $row['id'] ?></td>
-                        <td><?= e($row['title']) ?></td>
-                        <td><?= date('d.m.Y', strtotime($row['date'])) ?></td>
-                        <td>
-                            <a href="news.php?action=edit&id=<?= $row['id'] ?>" class="btn btn-sm btn-warning">Редактировать</a>
-                            <a href="news.php?action=delete&id=<?= $row['id'] ?>" class="btn btn-sm btn-danger" onclick="return confirm('Удалить?')">Удалить</a>
-                        </td>
-                    </tr>
-                <?php endwhile; ?>
-            </tbody>
-        </table>
-    <?php endif; ?>
-</div>
-<?php include '../includes/footer.php'; ?>
+
+            <?php if ($pages > 1): ?>
+                <nav class="pagination" aria-label="Навигация по страницам новостей">
+                    <?php for ($i = 1; $i <= $pages; $i++): ?>
+                        <?php if ($i === $page): ?><span class="pagination__current"><?= $i ?></span>
+                        <?php else: ?><a class="pagination__link" href="/news.php?page=<?= $i ?>"><?= $i ?></a><?php endif; ?>
+                    <?php endfor; ?>
+                </nav>
+            <?php endif; ?>
+        <?php endif; ?>
+
+    </div>
+</section>
+<?php include __DIR__ . '/includes/footer.php'; ?>
